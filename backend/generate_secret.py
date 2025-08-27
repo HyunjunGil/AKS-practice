@@ -9,5 +9,13 @@ mariadb_password_encoded = base64.b64encode(mariadb_password_raw.encode()).decod
 
 print(mariadb_password_raw)
 
+redis_password_raw = "GjA0PHx96N"
+redis_password_encoded = base64.b64encode(redis_password_raw.encode()).decode()
+
+print("redis_password_raw: ", redis_password_raw)
+print("redis_password_encoded: ", redis_password_encoded)
+
+
+
 print(encoded_key) 
 print(mariadb_password_encoded)

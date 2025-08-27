@@ -13,6 +13,8 @@ spec:
       labels:
         app: backend
     spec:
+      imagePullSecrets:
+      - name: acr-registry
       containers:
       - name: backend
         image: ktech4.azurecr.io/hyunjun-aks-demo-backend:latest
@@ -23,7 +25,7 @@ spec:
         - name: MYSQL_HOST
           value: "hyunjun-mariadb-0"
         - name: MYSQL_USER
-          value: "hyunjun"
+          value: "root"
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
