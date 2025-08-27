@@ -34,7 +34,7 @@ spec:
         - name: REDIS_HOST
           value: "redis-master.default.svc.cluster.local"
         - name: KAFKA_SERVERS
-          value: "my-kafka:9092"
+          value: "hyunjun-kafka:9092"
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:

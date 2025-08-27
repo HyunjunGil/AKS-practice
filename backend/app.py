@@ -108,14 +108,43 @@ def get_cache_stats():
 
 # Kafka Producer 설정
 def get_kafka_producer():
-    return KafkaProducer(
-        bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
-        value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-        security_protocol='SASL_PLAINTEXT',
-        sasl_mechanism='PLAIN',
-        sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
-        sasl_plain_password=os.getenv('KAFKA_PASSWORD', '')
-    )
+    try:
+        return KafkaProducer(
+            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
+            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+            security_protocol='SASL_PLAINTEXT',
+            sasl_mechanism='SCRAM-SHA-256',
+            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
+            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
+            # 연결 안정성을 위한 추가 설정
+            request_timeout_ms=30000,
+            retries=3,
+            acks='all'
+        )
+    except Exception as e:
+        print(f"Kafka producer creation error: {str(e)}")
+        return None
+
+# Kafka 연결 테스트 함수
+def test_kafka_connection():
+    """Kafka 연결 상태 테스트"""
+    try:
+        producer = get_kafka_producer()
+        if producer:
+            # 간단한 테스트 메시지 전송
+            test_data = {
+                'timestamp': datetime.now().isoformat(),
+                'test': True,
+                'message': 'Kafka connection test'
+            }
+            producer.send('api-logs', test_data)
+            producer.flush()
+            producer.close()
+            return {'status': 'success', 'message': 'Kafka connection successful'}
+        else:
+            return {'status': 'error', 'message': 'Failed to create Kafka producer'}
+    except Exception as e:
+        return {'status': 'error', 'message': f'Kafka connection failed: {str(e)}'}
 
 # 로깅 함수
 def log_to_redis(action, details):
@@ -140,24 +169,26 @@ def async_log_api_stats(endpoint, method, status, user_id):
     def _log():
         try:
             producer = get_kafka_producer()
-            log_data = {
-                'timestamp': datetime.now().isoformat(),
-                'endpoint': endpoint,
-                'method': method,
-                'status': status,
-                'user_id': user_id,
-                'message': f"{user_id}가 {method} {endpoint} 호출 ({status})"
-            }
-            producer.send('api-logs', log_data)
-            producer.flush()
+            if producer:
+                log_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'endpoint': endpoint,
+                    'method': method,
+                    'status': status,
+                    'user_id': user_id,
+                    'message': f"{user_id}가 {method} {endpoint} 호출 ({status})"
+                }
+                producer.send('api-logs', log_data)
+                producer.flush()
+                producer.close()
+                print(f"Kafka log sent: {endpoint} {method} {status}")
+            else:
+                print("Kafka producer not available, skipping log")
         except Exception as e:
             print(f"Kafka logging error: {str(e)}")
     
     # 새로운 스레드에서 로깅 실행
     Thread(target=_log).start()
-    
-    #  # 스레드 풀을 사용하여 작업 실행
-    # thread_pool.submit(_log)
 
 # 로그인 데코레이터
 def login_required(f):
@@ -417,6 +448,17 @@ def search_messages():
             async_log_api_stats('/db/messages/search', 'GET', 'error', session['user_id'])
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# Kafka 연결 테스트 엔드포인트
+@app.route('/logs/kafka/test', methods=['GET'])
+@login_required
+def test_kafka_connection_endpoint():
+    """Kafka 연결 상태 테스트"""
+    try:
+        result = test_kafka_connection()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # Kafka 로그 조회 엔드포인트 (개선된 버전)
 @app.route('/logs/kafka', methods=['GET'])
 @login_required
@@ -630,7 +672,7 @@ def get_api_statistics():
             bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='PLAIN',
+            sasl_mechanism='SCRAM-SHA-256',
             sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
             sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
             group_id='api-stats-viewer',
@@ -686,7 +728,7 @@ def search_kafka_logs(query, limit=50):
             bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='PLAIN',
+            sasl_mechanism='SCRAM-SHA-256',
             sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
             sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
             group_id='api-search-viewer',
