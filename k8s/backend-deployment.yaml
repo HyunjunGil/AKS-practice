@@ -21,9 +21,9 @@ spec:
         - containerPort: 5000
         env:
         - name: MYSQL_HOST
-          value: "my-mariadb"
+          value: "hyunjun-mariadb-0"
         - name: MYSQL_USER
-          value: "testuser"
+          value: "hyunjun"
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
