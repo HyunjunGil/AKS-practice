@@ -2,6 +2,29 @@
 
 이 프로젝트는 Kubernetes 환경에서 Redis, MariaDB, Kafka를 활용하는 마이크로서비스 데모입니다.
 
+## 빠른 시작
+
+### 자동 배포 (권장)
+```bash
+# 배포 스크립트 실행
+./deploy.sh
+```
+
+### 수동 배포
+```bash
+# 1. 데이터베이스 초기화
+kubectl apply -f k8s/db-init-job.yaml
+
+# 2. 백엔드 Secret 배포
+kubectl apply -f k8s/backend-secret.yaml
+
+# 3. 백엔드 서비스 배포
+kubectl apply -f k8s/backend-deployment.yaml
+
+# 4. 프론트엔드 서비스 배포
+kubectl apply -f k8s/frontend-deployment.yaml
+```
+
 ## 주요 기능
 
 ### 1. 사용자 관리
