@@ -23,7 +23,7 @@ spec:
         - containerPort: 5000
         env:
         - name: MYSQL_HOST
-          value: "hyunjun-mariadb-0"
+          value: "hyunjun-mariadb"
         - name: MYSQL_USER
           value: "root"
         - name: MYSQL_PASSWORD
