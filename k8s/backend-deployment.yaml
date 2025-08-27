@@ -13,12 +13,10 @@ spec:
       labels:
         app: backend
     spec:
-      imagePullSecrets:
-      - name: acr-registry
       containers:
       - name: backend
-        image: ktech4.azurecr.io/hyunjun-aks-demo-backend:latest
-        # imagePullPolicy: Never
+        image: hyunjun-aks-demo-backend:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 5000
         env:
