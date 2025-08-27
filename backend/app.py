@@ -417,10 +417,155 @@ def search_messages():
             async_log_api_stats('/db/messages/search', 'GET', 'error', session['user_id'])
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Kafka 로그 조회 엔드포인트
+# Kafka 로그 조회 엔드포인트 (개선된 버전)
 @app.route('/logs/kafka', methods=['GET'])
 @login_required
 def get_kafka_logs():
+    try:
+        # 쿼리 파라미터로 필터링
+        limit = int(request.args.get('limit', 100))
+        endpoint = request.args.get('endpoint')
+        status = request.args.get('status')
+        user_id = request.args.get('user_id')
+        
+        # 날짜 필터링
+        start_time = None
+        end_time = None
+        if request.args.get('start_date'):
+            start_time = datetime.fromisoformat(request.args.get('start_date'))
+        if request.args.get('end_date'):
+            end_time = datetime.fromisoformat(request.args.get('end_date'))
+        
+        logs = get_kafka_logs_with_filter(
+            limit=limit,
+            endpoint=endpoint,
+            status=status,
+            user_id=user_id,
+            start_time=start_time,
+            end_time=end_time
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'data': logs,
+            'count': len(logs),
+            'filters': {
+                'endpoint': endpoint,
+                'status': status,
+                'user_id': user_id,
+                'start_date': request.args.get('start_date'),
+                'end_date': request.args.get('end_date')
+            }
+        })
+    except Exception as e:
+        print(f"Kafka log retrieval error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# API 통계 대시보드
+@app.route('/logs/kafka/stats', methods=['GET'])
+@login_required
+def get_kafka_statistics():
+    """API 통계 정보 조회"""
+    try:
+        stats = get_api_statistics()
+        return jsonify({
+            'status': 'success',
+            'data': stats
+        })
+    except Exception as e:
+        print(f"Kafka statistics error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Kafka 로그 검색
+@app.route('/logs/kafka/search', methods=['GET'])
+@login_required
+def search_kafka_logs_endpoint():
+    """Kafka 로그 키워드 검색"""
+    try:
+        query = request.args.get('q', '')
+        if not query:
+            return jsonify({"status": "error", "message": "검색어를 입력해주세요"}), 400
+        
+        limit = int(request.args.get('limit', 50))
+        results = search_kafka_logs(query, limit)
+        
+        return jsonify({
+            'status': 'success',
+            'data': results,
+            'count': len(results),
+            'query': query
+        })
+    except Exception as e:
+        print(f"Kafka log search error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# 엔드포인트별 통계
+@app.route('/logs/kafka/endpoints', methods=['GET'])
+@login_required
+def get_endpoint_statistics():
+    """엔드포인트별 API 호출 통계"""
+    try:
+        stats = get_api_statistics()
+        endpoint_stats = stats.get('endpoints', {})
+        
+        # 상위 10개 엔드포인트
+        top_endpoints = sorted(endpoint_stats.items(), key=lambda x: x[1], reverse=True)[:10]
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'top_endpoints': top_endpoints,
+                'total_endpoints': len(endpoint_stats)
+            }
+        })
+    except Exception as e:
+        print(f"Endpoint statistics error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# 사용자별 활동 통계
+@app.route('/logs/kafka/users', methods=['GET'])
+@login_required
+def get_user_statistics():
+    """사용자별 API 호출 통계"""
+    try:
+        stats = get_api_statistics()
+        user_stats = stats.get('users', {})
+        
+        # 상위 10명 사용자
+        top_users = sorted(user_stats.items(), key=lambda x: x[1], reverse=True)[:10]
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'top_users': top_users,
+                'total_users': len(user_stats)
+            }
+        })
+    except Exception as e:
+        print(f"User statistics error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# 에러 로그 조회
+@app.route('/logs/kafka/errors', methods=['GET'])
+@login_required
+def get_error_logs():
+    """최근 에러 로그 조회"""
+    try:
+        limit = int(request.args.get('limit', 20))
+        logs = get_kafka_logs_with_filter(limit=limit, status='error')
+        
+        return jsonify({
+            'status': 'success',
+            'data': logs,
+            'count': len(logs)
+        })
+    except Exception as e:
+        print(f"Error logs retrieval error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Kafka 로그 관리 및 통계 함수들
+def get_kafka_logs_with_filter(limit=100, endpoint=None, status=None, user_id=None, start_time=None, end_time=None):
+    """필터링된 Kafka 로그 조회"""
     try:
         consumer = KafkaConsumer(
             'api-logs',
@@ -432,31 +577,151 @@ def get_kafka_logs():
             sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
             group_id='api-logs-viewer',
             auto_offset_reset='earliest',
-            consumer_timeout_ms=5000
+            consumer_timeout_ms=10000
         )
         
         logs = []
         try:
             for message in consumer:
+                log_data = message.value
+                
+                # 필터링 적용
+                if endpoint and log_data.get('endpoint') != endpoint:
+                    continue
+                if status and log_data.get('status') != status:
+                    continue
+                if user_id and log_data.get('user_id') != user_id:
+                    continue
+                if start_time:
+                    log_timestamp = datetime.fromisoformat(log_data.get('timestamp', ''))
+                    if log_timestamp < start_time:
+                        continue
+                if end_time:
+                    log_timestamp = datetime.fromisoformat(log_data.get('timestamp', ''))
+                    if log_timestamp > end_time:
+                        continue
+                
                 logs.append({
-                    'timestamp': message.value['timestamp'],
-                    'endpoint': message.value['endpoint'],
-                    'method': message.value['method'],
-                    'status': message.value['status'],
-                    'user_id': message.value['user_id'],
-                    'message': message.value['message']
+                    'timestamp': log_data.get('timestamp'),
+                    'endpoint': log_data.get('endpoint'),
+                    'method': log_data.get('method'),
+                    'status': log_data.get('status'),
+                    'user_id': log_data.get('user_id'),
+                    'message': log_data.get('message')
                 })
-                if len(logs) >= 100:
+                
+                if len(logs) >= limit:
                     break
         finally:
             consumer.close()
         
         # 시간 역순으로 정렬
         logs.sort(key=lambda x: x['timestamp'], reverse=True)
-        return jsonify(logs)
+        return logs
     except Exception as e:
         print(f"Kafka log retrieval error: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return []
+
+def get_api_statistics():
+    """API 통계 정보 조회"""
+    try:
+        consumer = KafkaConsumer(
+            'api-logs',
+            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            security_protocol='SASL_PLAINTEXT',
+            sasl_mechanism='PLAIN',
+            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
+            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
+            group_id='api-stats-viewer',
+            auto_offset_reset='earliest',
+            consumer_timeout_ms=5000
+        )
+        
+        stats = {
+            'total_calls': 0,
+            'endpoints': {},
+            'status_codes': {},
+            'users': {},
+            'recent_errors': []
+        }
+        
+        try:
+            for message in consumer:
+                log_data = message.value
+                stats['total_calls'] += 1
+                
+                # 엔드포인트별 통계
+                endpoint = log_data.get('endpoint', 'unknown')
+                stats['endpoints'][endpoint] = stats['endpoints'].get(endpoint, 0) + 1
+                
+                # 상태 코드별 통계
+                status = log_data.get('status', 'unknown')
+                stats['status_codes'][status] = stats['status_codes'].get(status, 0) + 1
+                
+                # 사용자별 통계
+                user = log_data.get('user_id', 'anonymous')
+                stats['users'][user] = stats['users'].get(user, 0) + 1
+                
+                # 최근 에러 로그
+                if status == 'error' and len(stats['recent_errors']) < 10:
+                    stats['recent_errors'].append({
+                        'timestamp': log_data.get('timestamp'),
+                        'endpoint': endpoint,
+                        'message': log_data.get('message')
+                    })
+        finally:
+            consumer.close()
+        
+        return stats
+    except Exception as e:
+        print(f"API statistics error: {str(e)}")
+        return {}
+
+def search_kafka_logs(query, limit=50):
+    """Kafka 로그에서 키워드 검색"""
+    try:
+        consumer = KafkaConsumer(
+            'api-logs',
+            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            security_protocol='SASL_PLAINTEXT',
+            sasl_mechanism='PLAIN',
+            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
+            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
+            group_id='api-search-viewer',
+            auto_offset_reset='earliest',
+            consumer_timeout_ms=8000
+        )
+        
+        results = []
+        try:
+            for message in consumer:
+                log_data = message.value
+                
+                # 키워드 검색
+                searchable_text = f"{log_data.get('endpoint', '')} {log_data.get('message', '')} {log_data.get('user_id', '')}"
+                if query.lower() in searchable_text.lower():
+                    results.append({
+                        'timestamp': log_data.get('timestamp'),
+                        'endpoint': log_data.get('endpoint'),
+                        'method': log_data.get('method'),
+                        'status': log_data.get('status'),
+                        'user_id': log_data.get('user_id'),
+                        'message': log_data.get('message')
+                    })
+                
+                if len(results) >= limit:
+                    break
+        finally:
+            consumer.close()
+        
+        # 시간 역순으로 정렬
+        results.sort(key=lambda x: x['timestamp'], reverse=True)
+        return results
+    except Exception as e:
+        print(f"Kafka log search error: {str(e)}")
+        return []
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 
