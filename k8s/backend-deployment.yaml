@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: giglepeople/aks-test-app-backend:latest
+        image: ktech4.azurecr.io/hyunjun-aks-demo-backend:latest
         # imagePullPolicy: Never
         ports:
         - containerPort: 5000

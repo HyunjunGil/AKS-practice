@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: giglepeople/aks-test-app-frontend:latest
+        image: ktech4.azurecr.io/hyunjun-aks-demo-frontend:latest
         # imagePullPolicy: Never
         ports:
         - containerPort: 80
