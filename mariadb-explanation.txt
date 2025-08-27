@@ -1,0 +1,54 @@
+> helm install hyunjun-mariadb oci://registry-1.docker.io/bitnamicharts/mariadb -n hyunjun 
+Pulled: registry-1.docker.io/bitnamicharts/mariadb:22.0.0
+Digest: sha256:2067b284bfa5c0975749f96aa01d07e7a91f21c49d70225a08d9a66b25f8a315
+NAME: hyunjun-mariadb
+LAST DEPLOYED: Thu Aug 28 00:15:41 2025
+NAMESPACE: hyunjun
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+CHART NAME: mariadb
+CHART VERSION: 22.0.0
+APP VERSION: 12.0.2
+
+⚠ WARNING: Since August 28th, 2025, only a limited subset of images/charts are available for free.
+    Subscribe to Bitnami Secure Images to receive continued support and security updates.
+    More info at https://bitnami.com and https://github.com/bitnami/containers/issues/83267
+
+** Please be patient while the chart is being deployed **
+
+Tip:
+
+  Watch the deployment status using the command: kubectl get pods -w --namespace hyunjun -l app.kubernetes.io/instance=hyunjun-mariadb
+
+Services:
+
+  echo Primary: hyunjun-mariadb.hyunjun.svc.cluster.local:3306
+
+Administrator credentials:
+
+  Username: root
+  Password : $(kubectl get secret --namespace hyunjun hyunjun-mariadb -o jsonpath="{.data.mariadb-root-password}" | base64 -d)
+
+To connect to your database:
+
+  1. Run a pod that you can use as a client:
+
+      kubectl run hyunjun-mariadb-client --rm --tty -i --restart='Never' --image  docker.io/bitnami/mariadb:12.0.2-debian-12-r0 --namespace hyunjun --command -- bash
+
+  2. To connect to primary service (read/write):
+
+      mysql -h hyunjun-mariadb.hyunjun.svc.cluster.local -uroot -p my_database
+
+To upgrade this helm chart:
+
+  1. Obtain the password as described on the 'Administrator credentials' section and set the 'auth.rootPassword' parameter as shown below:
+
+      ROOT_PASSWORD=$(kubectl get secret --namespace hyunjun hyunjun-mariadb -o jsonpath="{.data.mariadb-root-password}" | base64 -d)
+      helm upgrade --namespace hyunjun hyunjun-mariadb oci://registry-1.docker.io/bitnamicharts/mariadb --set auth.rootPassword=$ROOT_PASSWORD
+
+WARNING: There are "resources" sections in the chart not set. Using "resourcesPreset" is not recommended for production. For production installations, please set the following values according to your workload needs:
+  - primary.resources
+  - secondary.resources
++info https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
