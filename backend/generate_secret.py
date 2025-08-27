@@ -9,11 +9,17 @@ mariadb_password_encoded = base64.b64encode(mariadb_password_raw.encode()).decod
 
 print(mariadb_password_raw, mariadb_password_encoded)
 
-redis_password_raw = "GjA0PHx96N"
+redis_password_raw = ""
 redis_password_encoded = base64.b64encode(redis_password_raw.encode()).decode()
 
 print("redis_password_raw: ", redis_password_raw)
 print("redis_password_encoded: ", redis_password_encoded)
+
+kafka_password_raw = ""
+kafka_password_encoded = base64.b64encode(kafka_password_raw.encode()).decode()
+
+print("kafka_password_raw: ", kafka_password_raw)
+print("kafka_password_encoded: ", kafka_password_encoded)
 
 
 
