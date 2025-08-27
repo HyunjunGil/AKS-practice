@@ -29,13 +29,82 @@ def get_db_connection():
 
 # Redis 연결 함수
 def get_redis_connection():
-    return redis.Redis(
-        host=os.getenv('REDIS_HOST', 'my-redis-master'),
-        port=6379,
-        password=os.getenv('REDIS_PASSWORD'),
-        decode_responses=True,
-        db=0
-    )
+    try:
+        redis_client = redis.Redis(
+            host=os.getenv('REDIS_HOST', 'my-redis-master'),
+            port=6379,
+            password=os.getenv('REDIS_PASSWORD'),
+            decode_responses=True,
+            db=0,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True
+        )
+        # 연결 테스트
+        redis_client.ping()
+        return redis_client
+    except Exception as e:
+        print(f"Redis connection error: {str(e)}")
+        return None
+
+# Redis 검색 캐시 함수들
+def get_search_cache(query):
+    """Redis에서 검색 결과 캐시 가져오기"""
+    try:
+        redis_client = get_redis_connection()
+        if redis_client:
+            cache_key = f"search:{query}"
+            cached_result = redis_client.get(cache_key)
+            if cached_result:
+                print(f"Cache hit for query: {query}")
+                return json.loads(cached_result)
+        return None
+    except Exception as e:
+        print(f"Redis cache get error: {str(e)}")
+        return None
+
+def set_search_cache(query, results, expire_time=300):
+    """Redis에 검색 결과 캐시 저장 (기본 5분)"""
+    try:
+        redis_client = get_redis_connection()
+        if redis_client:
+            cache_key = f"search:{query}"
+            redis_client.setex(cache_key, expire_time, json.dumps(results))
+            print(f"Cache set for query: {query}, expire: {expire_time}s")
+    except Exception as e:
+        print(f"Redis cache set error: {str(e)}")
+
+def clear_search_cache():
+    """검색 캐시 전체 삭제"""
+    try:
+        redis_client = get_redis_connection()
+        if redis_client:
+            # search: 패턴의 모든 키 삭제
+            pattern = "search:*"
+            keys = redis_client.keys(pattern)
+            if keys:
+                redis_client.delete(*keys)
+                print(f"Cleared {len(keys)} search cache keys")
+    except Exception as e:
+        print(f"Redis cache clear error: {str(e)}")
+
+def get_cache_stats():
+    """캐시 통계 정보 가져오기"""
+    try:
+        redis_client = get_redis_connection()
+        if redis_client:
+            pattern = "search:*"
+            keys = redis_client.keys(pattern)
+            cache_info = {
+                'total_cache_keys': len(keys),
+                'cache_pattern': pattern,
+                'redis_status': 'connected'
+            }
+            return cache_info
+        else:
+            return {'redis_status': 'disconnected'}
+    except Exception as e:
+        return {'redis_status': 'error', 'error': str(e)}
 
 # Kafka Producer 설정
 def get_kafka_producer():
@@ -52,14 +121,17 @@ def get_kafka_producer():
 def log_to_redis(action, details):
     try:
         redis_client = get_redis_connection()
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'action': action,
-            'details': details
-        }
-        redis_client.lpush('api_logs', json.dumps(log_entry))
-        redis_client.ltrim('api_logs', 0, 99)  # 최근 100개 로그만 유지
-        redis_client.close()
+        if redis_client:
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'action': action,
+                'details': details
+            }
+            redis_client.lpush('api_logs', json.dumps(log_entry))
+            redis_client.ltrim('api_logs', 0, 99)  # 최근 100개 로그만 유지
+            redis_client.close()
+        else:
+            print("Redis 연결 불가로 로깅 건너뜀")
     except Exception as e:
         print(f"Redis logging error: {str(e)}")
 
@@ -147,9 +219,51 @@ def get_from_db():
 def get_redis_logs():
     try:
         redis_client = get_redis_connection()
-        logs = redis_client.lrange('api_logs', 0, -1)
-        redis_client.close()
-        return jsonify([json.loads(log) for log in logs])
+        if redis_client:
+            logs = redis_client.lrange('api_logs', 0, -1)
+            redis_client.close()
+            return jsonify([json.loads(log) for log in logs])
+        else:
+            return jsonify({"status": "error", "message": "Redis 연결 불가"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Redis 캐시 관리 엔드포인트들
+@app.route('/cache/stats', methods=['GET'])
+@login_required
+def get_cache_statistics():
+    """캐시 통계 정보 조회"""
+    try:
+        stats = get_cache_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/cache/clear', methods=['POST'])
+@login_required
+def clear_cache():
+    """검색 캐시 전체 삭제"""
+    try:
+        clear_search_cache()
+        return jsonify({"status": "success", "message": "검색 캐시가 삭제되었습니다"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/cache/search/<query>', methods=['DELETE'])
+@login_required
+def delete_search_cache(query):
+    """특정 검색어의 캐시 삭제"""
+    try:
+        redis_client = get_redis_connection()
+        if redis_client:
+            cache_key = f"search:{query}"
+            deleted = redis_client.delete(cache_key)
+            if deleted:
+                return jsonify({"status": "success", "message": f"'{query}' 검색 캐시가 삭제되었습니다"})
+            else:
+                return jsonify({"status": "info", "message": f"'{query}' 검색 캐시가 존재하지 않습니다"})
+        else:
+            return jsonify({"status": "error", "message": "Redis 연결 불가"}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -210,12 +324,16 @@ def login():
             # Redis 세션 저장 (선택적)
             try:
                 redis_client = get_redis_connection()
-                session_data = {
-                    'user_id': username,
-                    'login_time': datetime.now().isoformat()
-                }
-                redis_client.set(f"session:{username}", json.dumps(session_data))
-                redis_client.expire(f"session:{username}", 3600)
+                if redis_client:
+                    session_data = {
+                        'user_id': username,
+                        'login_time': datetime.now().isoformat()
+                    }
+                    redis_client.set(f"session:{username}", json.dumps(session_data))
+                    redis_client.expire(f"session:{username}", 3600)
+                    redis_client.close()
+                else:
+                    print("Redis 연결 불가로 세션 저장 건너뜀")
             except Exception as redis_error:
                 print(f"Redis session error: {str(redis_error)}")
                 # Redis 오류는 무시하고 계속 진행
@@ -238,12 +356,31 @@ def logout():
     try:
         if 'user_id' in session:
             username = session['user_id']
-            redis_client = get_redis_connection()
-            redis_client.delete(f"session:{username}")
+            
+            # Redis 세션 삭제 시도 (Redis 오류는 무시하고 계속 진행)
+            try:
+                redis_client = get_redis_connection()
+                if redis_client:
+                    redis_client.delete(f"session:{username}")
+                    redis_client.close()
+                    print(f"Redis session deleted for user: {username}")
+                else:
+                    print("Redis 연결 불가로 세션 삭제 건너뜀")
+            except Exception as redis_error:
+                print(f"Redis session cleanup error (ignored): {str(redis_error)}")
+                # Redis 오류는 무시하고 계속 진행
+            
+            # Flask 세션에서 사용자 정보 제거 (이 부분은 반드시 실행되어야 함)
             session.pop('user_id', None)
+            print(f"Flask session cleared for user: {username}")
+            
         return jsonify({"status": "success", "message": "로그아웃 성공"})
+        
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        print(f"Logout error: {str(e)}")
+        # Redis 오류가 아닌 다른 오류가 발생한 경우에도 사용자에게는 성공 응답
+        # (Redis가 없어도 로그아웃은 가능해야 함)
+        return jsonify({"status": "success", "message": "로그아웃 완료 (일부 정리 작업 실패)"}), 200
 
 # 메시지 검색 (DB에서 검색)
 @app.route('/db/messages/search', methods=['GET'])
@@ -253,6 +390,12 @@ def search_messages():
         query = request.args.get('q', '')
         user_id = session['user_id']
         
+        # Redis에서 검색 캐시 확인
+        cached_results = get_search_cache(query)
+        if cached_results:
+            async_log_api_stats('/db/messages/search', 'GET', 'cache_hit', user_id)
+            return jsonify(cached_results)
+
         # DB에서 검색
         db = get_db_connection()
         cursor = db.cursor(dictionary=True)
@@ -262,6 +405,9 @@ def search_messages():
         cursor.close()
         db.close()
         
+        # Redis에 검색 결과 캐시
+        set_search_cache(query, results)
+
         # 검색 이력을 Kafka에 저장
         async_log_api_stats('/db/messages/search', 'GET', 'success', user_id)
         
