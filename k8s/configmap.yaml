@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: hyunjun
+data:
+  MYSQL_HOST: "hyunjun-mariadb"
+  MYSQL_DATABASE: "testdb"
+  MYSQL_USER: "testuser"
+  REDIS_HOST: "hyunjun-redis-master"
+  KAFKA_SERVERS: "hyunjun-kafka:9092"
+  KAFKA_USERNAME: "user1"
+  FLASK_ENV: "production"
+  LOG_LEVEL: "INFO"

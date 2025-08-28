@@ -19,29 +19,20 @@ spec:
         imagePullPolicy: Never
         ports:
         - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: app-config
         env:
-        - name: MYSQL_HOST
-          value: "hyunjun-mariadb"
-        - name: MYSQL_DATABASE
-          value: "testdb"
-        - name: MYSQL_USER
-          value: "testuser"
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
               name: backend-secrets
               key: MYSQL_PASSWORD
-        - name: REDIS_HOST
-          value: "hyunjun-redis-master"
-        - name: KAFKA_SERVERS
-          value: "hyunjun-kafka:9092"
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
               name: backend-secrets
               key: REDIS_PASSWORD
-        - name: KAFKA_USERNAME
-          value: "user1"
         - name: KAFKA_PASSWORD
           valueFrom:
             secretKeyRef:
