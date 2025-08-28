@@ -1,0 +1,42 @@
+# charts/mariadb/values.yaml
+global:
+  storageClass: ""
+
+# MariaDB 릴리스 이름 설정
+fullnameOverride: "hyunjun-mariadb"
+
+primary:
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  
+  auth:
+    rootPassword: "hyunjun"
+    database: "testdb"
+    username: "testuser"
+    password: "hyunjun"
+  
+  service:
+    type: ClusterIP
+    port: 3306
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9104"
+
+secondary:
+  enabled: false
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false

@@ -22,15 +22,17 @@ spec:
         env:
         - name: MYSQL_HOST
           value: "hyunjun-mariadb"
+        - name: MYSQL_DATABASE
+          value: "testdb"
         - name: MYSQL_USER
-          value: "root"
+          value: "testuser"
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
               name: backend-secrets
               key: MYSQL_PASSWORD
         - name: REDIS_HOST
-          value: "redis-master.default.svc.cluster.local"
+          value: "hyunjun-redis-master"
         - name: KAFKA_SERVERS
           value: "hyunjun-kafka:9092"
         - name: REDIS_PASSWORD

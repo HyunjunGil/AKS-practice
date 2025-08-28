@@ -1,0 +1,44 @@
+# charts/redis/values.yaml
+global:
+  storageClass: ""
+
+# Redis 릴리스 이름 설정
+fullnameOverride: "hyunjun-redis"
+
+architecture: standalone
+
+auth:
+  enabled: true
+  sentinel: false
+  password: "undIJzFiRi"
+
+master:
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  
+  service:
+    type: ClusterIP
+    port: 6379
+  
+  resources:
+    requests:
+      memory: "192Mi"
+      cpu: "150m"
+    limits:
+      memory: "384Mi"
+      cpu: "300m"
+
+  # 설정 단순화
+  command: []
+  args: []
+
+metrics:
+  enabled: false  # 메트릭스 비활성화로 문제 줄이기
+
+securityContext:
+  enabled: false  # 보안 컨텍스트 비활성화
+
+containerSecurityContext:
+  enabled: false  # 컨테이너 보안 컨텍스트 비활성화

@@ -1,0 +1,82 @@
+# charts/kafka/values.yaml
+global:
+  storageClass: ""
+
+# Kafka 릴리스 이름 설정
+fullnameOverride: "hyunjun-kafka"
+
+# Kafka 인증 설정
+auth:
+  clientProtocol: sasl
+  interBrokerProtocol: sasl
+  saslMechanism: scram-sha-512
+  tls: false
+
+# 사용자 및 비밀번호 설정
+users:
+  - name: user1
+    password: "Ytmsc1amZl"  # backend-secret.yaml과 일치
+    groups: []
+    permissions: []
+
+# Kafka 설정 - 로컬 환경에 맞게 조정
+replicaCount: 1
+
+persistence:
+  enabled: true
+  size: 8Gi
+  storageClass: ""
+
+zookeeper:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  
+  resources:
+    requests:
+      memory: "192Mi"
+      cpu: "150m"
+    limits:
+      memory: "384Mi"
+      cpu: "300m"
+
+resources:
+  requests:
+    memory: "384Mi"
+    cpu: "300m"
+  limits:
+    memory: "768Mi"
+    cpu: "600m"
+
+service:
+  type: ClusterIP
+  port: 9092
+
+externalAccess:
+  enabled: false
+
+deleteTopicEnable: true
+autoCreateTopicsEnable: true
+
+metrics:
+  kafka:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  
+  zookeeper:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+securityContext:
+  enabled: true
+  fsGroup: 1001
+  runAsUser: 1001
+
+containerSecurityContext:
+  enabled: true
+  runAsUser: 1001
+  runAsNonRoot: true
