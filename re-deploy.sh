@@ -118,6 +118,19 @@ echo ""
 echo "🔄 All existing application resources have been removed."
 echo "   Infrastructure components (MariaDB, Kafka, Redis) are preserved."
 echo ""
+
+# Kafka 설정 파일 확인
+echo "🔍 Checking Kafka Configuration..."
+KAFKA_POD=$(kubectl get pods -n hyunjun -l app.kubernetes.io/name=kafka -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [ ! -z "$KAFKA_POD" ]; then
+    echo "📨 Kafka Pod: $KAFKA_POD"
+    echo "🔧 Client SASL JAAS Configuration:"
+    kubectl exec -n hyunjun $KAFKA_POD -- cat /opt/bitnami/kafka/config/server.properties | grep "listener.name.client.plain.sasl.jaas.config" 2>/dev/null || echo "   No client SASL JAAS config found"
+else
+    echo "❌ Kafka pod not found"
+fi
+
+echo ""
 read -p "Press Enter to continue with fresh deployment, or Ctrl+C to abort..."
 
 echo ""

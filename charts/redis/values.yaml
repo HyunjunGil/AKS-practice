@@ -5,6 +5,16 @@ global:
 # Redis 릴리스 이름 설정
 fullnameOverride: "hyunjun-redis"
 
+image:
+  registry: docker.io
+  repository: bitnamilegacy/redis
+  tag: 8.2.1-debian-12-r0
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  debug: false
+
+
 architecture: standalone
 
 auth:

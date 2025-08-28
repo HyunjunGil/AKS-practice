@@ -5,6 +5,15 @@ global:
 # Kafka 릴리스 이름 설정
 fullnameOverride: "hyunjun-kafka"
 
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  debug: false
+
 # Kafka 인증 설정
 auth:
   clientProtocol: sasl
