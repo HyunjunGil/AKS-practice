@@ -20,7 +20,7 @@ users:
     permissions: []
 
 # Kafka 설정 - 로컬 환경에 맞게 조정
-replicaCount: 1
+replicaCount: 3
 
 persistence:
   enabled: true

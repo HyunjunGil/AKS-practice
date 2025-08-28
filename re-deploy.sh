@@ -82,6 +82,11 @@ kubectl delete -f k8s/db-init-job.yaml --ignore-not-found=true
 echo "Removing Secrets..."
 kubectl delete -f k8s/backend-secret.yaml --ignore-not-found=true
 
+# OpenTelemetry Collector 삭제
+echo "Removing OpenTelemetry Collector..."
+kubectl delete -f k8s/otel-collector-deployment.yaml --ignore-not-found=true
+kubectl delete -f k8s/otel-collector-config.yaml --ignore-not-found=true
+
 # ConfigMap 삭제
 echo "Removing ConfigMap..."
 kubectl delete -f k8s/configmap.yaml --ignore-not-found=true
@@ -94,8 +99,10 @@ kubectl delete -f k8s/storage.yaml --ignore-not-found=true
 echo "Cleaning application resources (preserving infrastructure)..."
 kubectl delete deployment backend -n hyunjun --ignore-not-found=true
 kubectl delete deployment frontend -n hyunjun --ignore-not-found=true
+kubectl delete deployment otel-collector -n hyunjun --ignore-not-found=true
 kubectl delete service backend-service -n hyunjun --ignore-not-found=true
 kubectl delete service frontend-service -n hyunjun --ignore-not-found=true
+kubectl delete service otel-collector -n hyunjun --ignore-not-found=true
 kubectl delete ingress -n hyunjun --all --ignore-not-found=true
 kubectl delete hpa -n hyunjun --all --ignore-not-found=true
 kubectl delete job db-init-job -n hyunjun --ignore-not-found=true
@@ -127,6 +134,11 @@ kubectl apply -f k8s/configmap.yaml
 # Secret 배포
 echo "Deploying Secrets..."
 kubectl apply -f k8s/backend-secret.yaml
+
+# OpenTelemetry Collector 배포
+echo "Deploying OpenTelemetry Collector..."
+kubectl apply -f k8s/otel-collector-config.yaml
+kubectl apply -f k8s/otel-collector-deployment.yaml
 
 # 데이터베이스 초기화
 echo "Initializing database..."

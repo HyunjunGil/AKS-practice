@@ -10,9 +10,60 @@ from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from threading import Thread
 
+# OpenTelemetry imports
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.mysql import MySQLInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+
 app = Flask(__name__)
 CORS(app, supports_credentials=True)  # 세션을 위한 credentials 지원
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-here')  # 세션을 위한 시크릿 키
+
+# OpenTelemetry 초기화
+def init_telemetry():
+    """OpenTelemetry 초기화 및 계측 설정"""
+    # Grafana OTLP 엔드포인트 설정
+    otlp_endpoint = os.getenv('OTLP_ENDPOINT', 'http://grafana.20.249.154.255.nip.io:4317')
+    
+    # Tracer 설정
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer(__name__)
+    
+    # Span Exporter 설정
+    span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+    span_processor = BatchSpanProcessor(span_exporter)
+    trace.get_tracer_provider().add_span_processor(span_processor)
+    
+    # Metric 설정
+    metric_reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=otlp_endpoint, insecure=True)
+    )
+    metrics.set_meter_provider(MeterProvider(metric_readers=[metric_reader]))
+    
+    # Flask 자동 계측
+    FlaskInstrumentor().instrument_app(app)
+    
+    # MySQL 자동 계측
+    MySQLInstrumentor().instrument()
+    
+    # Redis 자동 계측
+    RedisInstrumentor().instrument()
+    
+    # Kafka는 전용 instrumentation이 없으므로 제거
+    # KafkaInstrumentor().instrument()
+    
+    print(f"OpenTelemetry initialized with endpoint: {otlp_endpoint}")
+    return tracer
+
+# OpenTelemetry 초기화
+tracer = init_telemetry()
 
 # # 스레드 풀 생성
 # thread_pool = ThreadPoolExecutor(max_workers=5)
@@ -106,16 +157,58 @@ def get_cache_stats():
     except Exception as e:
         return {'redis_status': 'error', 'error': str(e)}
 
+# Kafka 환경 변수 확인 함수
+def check_kafka_env_vars():
+    """Kafka 환경 변수 확인 및 경고 출력"""
+    kafka_servers = os.getenv('KAFKA_SERVERS', 'NOT_SET')
+    kafka_username = os.getenv('KAFKA_USERNAME', 'NOT_SET')
+    kafka_password = os.getenv('KAFKA_PASSWORD', 'NOT_SET')
+    
+    # 환경 변수가 설정되지 않은 경우 경고 출력
+    if kafka_servers == 'NOT_SET':
+        print("⚠️  WARNING: KAFKA_SERVERS environment variable is not set!")
+    if kafka_username == 'NOT_SET':
+        print("⚠️  WARNING: KAFKA_USERNAME environment variable is not set!")
+    if kafka_password == 'NOT_SET':
+        print("⚠️  WARNING: KAFKA_PASSWORD environment variable is not set!")
+    
+    return kafka_servers, kafka_username, kafka_password
+
+# Kafka Consumer 생성 함수
+def create_kafka_consumer(group_id, timeout_ms=10000):
+    """Kafka Consumer 생성 (공통 설정)"""
+    kafka_servers, kafka_username, kafka_password = check_kafka_env_vars()
+    
+    if kafka_servers == 'NOT_SET' or kafka_username == 'NOT_SET' or kafka_password == 'NOT_SET':
+        print("⚠️  WARNING: Kafka environment variables are not set!")
+        return None
+    
+    return KafkaConsumer(
+        'api-logs',
+        bootstrap_servers=kafka_servers,
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+        security_protocol='SASL_PLAINTEXT',
+        sasl_mechanism='SCRAM-SHA-512',
+        sasl_plain_username=kafka_username,
+        sasl_plain_password=kafka_password,
+        group_id=group_id,
+        auto_offset_reset='earliest',
+        consumer_timeout_ms=timeout_ms
+    )
+
 # Kafka Producer 설정
 def get_kafka_producer():
     try:
+        # 환경 변수 확인
+        kafka_servers, kafka_username, kafka_password = check_kafka_env_vars()
+        
         return KafkaProducer(
-            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
+            bootstrap_servers=kafka_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
             security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='SCRAM-SHA-256',
-            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
-            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
+            sasl_mechanism='SCRAM-SHA-512',
+            sasl_plain_username=kafka_username,
+            sasl_plain_password=kafka_password,
             # 연결 안정성을 위한 추가 설정
             request_timeout_ms=30000,
             retries=3,
@@ -334,52 +427,66 @@ def register():
 # 로그인 엔드포인트
 @app.route('/login', methods=['POST'])
 def login():
-    try:
-        data = request.json
-        username = data.get('username')
-        password = data.get('password')
-        
-        if not username or not password:
-            return jsonify({"status": "error", "message": "사용자명과 비밀번호는 필수입니다"}), 400
-        
-        db = get_db_connection()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-        user = cursor.fetchone()
-        cursor.close()
-        db.close()
-        
-        if user and check_password_hash(user['password'], password):
-            session['user_id'] = username  # 세션에 사용자 정보 저장
+    with tracer.start_as_current_span("login") as span:
+        try:
+            data = request.json
+            username = data.get('username')
+            password = data.get('password')
             
-            # Redis 세션 저장 (선택적)
-            try:
-                redis_client = get_redis_connection()
-                if redis_client:
-                    session_data = {
-                        'user_id': username,
-                        'login_time': datetime.now().isoformat()
-                    }
-                    redis_client.set(f"session:{username}", json.dumps(session_data))
-                    redis_client.expire(f"session:{username}", 3600)
-                    redis_client.close()
-                else:
-                    print("Redis 연결 불가로 세션 저장 건너뜀")
-            except Exception as redis_error:
-                print(f"Redis session error: {str(redis_error)}")
-                # Redis 오류는 무시하고 계속 진행
+            # Span에 사용자 정보 추가 (민감하지 않은 정보만)
+            span.set_attribute("user.username", username)
+            span.set_attribute("http.method", "POST")
+            span.set_attribute("http.route", "/login")
             
-            return jsonify({
-                "status": "success", 
-                "message": "로그인 성공",
-                "username": username
-            })
-        
-        return jsonify({"status": "error", "message": "잘못된 인증 정보"}), 401
-        
-    except Exception as e:
-        print(f"Login error: {str(e)}")  # 서버 로그에 에러 출력
-        return jsonify({"status": "error", "message": "로그인 처리 중 오류가 발생했습니다"}), 500
+            if not username or not password:
+                span.set_attribute("error", True)
+                span.set_attribute("error.message", "사용자명과 비밀번호는 필수입니다")
+                return jsonify({"status": "error", "message": "사용자명과 비밀번호는 필수입니다"}), 400
+            
+            db = get_db_connection()
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            cursor.close()
+            db.close()
+            
+            if user and check_password_hash(user['password'], password):
+                session['user_id'] = username  # 세션에 사용자 정보 저장
+                
+                # Redis 세션 저장 (선택적)
+                try:
+                    redis_client = get_redis_connection()
+                    if redis_client:
+                        session_data = {
+                            'user_id': username,
+                            'login_time': datetime.now().isoformat()
+                        }
+                        redis_client.set(f"session:{username}", json.dumps(session_data))
+                        redis_client.expire(f"session:{username}", 3600)
+                        redis_client.close()
+                    else:
+                        print("Redis 연결 불가로 세션 저장 건너뜀")
+                except Exception as redis_error:
+                    print(f"Redis session error: {str(redis_error)}")
+                    # Redis 오류는 무시하고 계속 진행
+                
+                span.set_attribute("login.success", True)
+                return jsonify({
+                    "status": "success", 
+                    "message": "로그인 성공",
+                    "username": username
+                })
+            
+            span.set_attribute("login.success", False)
+            span.set_attribute("error", True)
+            span.set_attribute("error.message", "잘못된 인증 정보")
+            return jsonify({"status": "error", "message": "잘못된 인증 정보"}), 401
+            
+        except Exception as e:
+            span.set_attribute("error", True)
+            span.set_attribute("error.message", str(e))
+            print(f"Login error: {str(e)}")  # 서버 로그에 에러 출력
+            return jsonify({"status": "error", "message": "로그인 처리 중 오류가 발생했습니다"}), 500
 
 # 로그아웃 엔드포인트
 @app.route('/logout', methods=['POST'])
@@ -417,36 +524,46 @@ def logout():
 @app.route('/db/messages/search', methods=['GET'])
 @login_required
 def search_messages():
-    try:
-        query = request.args.get('q', '')
-        user_id = session['user_id']
-        
-        # Redis에서 검색 캐시 확인
-        cached_results = get_search_cache(query)
-        if cached_results:
-            async_log_api_stats('/db/messages/search', 'GET', 'cache_hit', user_id)
-            return jsonify(cached_results)
+    with tracer.start_as_current_span("search_messages") as span:
+        try:
+            query = request.args.get('q', '')
+            user_id = session['user_id']
+            
+            # Span에 검색 정보 추가
+            span.set_attribute("search.query", query)
+            span.set_attribute("user.id", user_id)
+            span.set_attribute("http.method", "GET")
+            span.set_attribute("http.route", "/db/messages/search")
+            
+            # Redis에서 검색 캐시 확인
+            cached_results = get_search_cache(query)
+            if cached_results:
+                span.set_attribute("cache.hit", True)
+                async_log_api_stats('/db/messages/search', 'GET', 'cache_hit', user_id)
+                return jsonify(cached_results)
 
-        # DB에서 검색
-        db = get_db_connection()
-        cursor = db.cursor(dictionary=True)
-        sql = "SELECT * FROM messages WHERE message LIKE %s ORDER BY created_at DESC"
-        cursor.execute(sql, (f"%{query}%",))
-        results = cursor.fetchall()
-        cursor.close()
-        db.close()
-        
-        # Redis에 검색 결과 캐시
-        set_search_cache(query, results)
+            # DB에서 검색
+            db = get_db_connection()
+            cursor = db.cursor(dictionary=True)
+            sql = "SELECT * FROM messages WHERE message LIKE %s ORDER BY created_at DESC"
+            cursor.execute(sql, (f"%{query}%",))
+            results = cursor.fetchall()
+            cursor.close()
+            db.close()
+            
+            # Redis에 검색 결과 캐시
+            set_search_cache(query, results)
 
-        # 검색 이력을 Kafka에 저장
-        async_log_api_stats('/db/messages/search', 'GET', 'success', user_id)
-        
-        return jsonify(results)
-    except Exception as e:
-        if 'user_id' in session:
-            async_log_api_stats('/db/messages/search', 'GET', 'error', session['user_id'])
-        return jsonify({"status": "error", "message": str(e)}), 500
+            # 검색 이력을 Kafka에 저장
+            async_log_api_stats('/db/messages/search', 'GET', 'success', user_id)
+            
+            return jsonify(results)
+        except Exception as e:
+            span.set_attribute("error", True)
+            span.set_attribute("error.message", str(e))
+            if 'user_id' in session:
+                async_log_api_stats('/db/messages/search', 'GET', 'error', session['user_id'])
+            return jsonify({"status": "error", "message": str(e)}), 500
 
 # Kafka 연결 테스트 엔드포인트
 @app.route('/logs/kafka/test', methods=['GET'])
@@ -525,8 +642,16 @@ def search_kafka_logs_endpoint():
     """Kafka 로그 키워드 검색"""
     try:
         query = request.args.get('q', '')
+        # 빈 검색어일 때는 전체 로그 반환
         if not query:
-            return jsonify({"status": "error", "message": "검색어를 입력해주세요"}), 400
+            limit = int(request.args.get('limit', 50))
+            results = get_kafka_logs_with_filter(limit=limit)
+            return jsonify({
+                'status': 'success',
+                'data': results,
+                'count': len(results),
+                'query': 'all'
+            })
         
         limit = int(request.args.get('limit', 50))
         results = search_kafka_logs(query, limit)
@@ -609,18 +734,9 @@ def get_error_logs():
 def get_kafka_logs_with_filter(limit=100, endpoint=None, status=None, user_id=None, start_time=None, end_time=None):
     """필터링된 Kafka 로그 조회"""
     try:
-        consumer = KafkaConsumer(
-            'api-logs',
-            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='PLAIN',
-            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
-            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
-            group_id='api-logs-viewer',
-            auto_offset_reset='earliest',
-            consumer_timeout_ms=10000
-        )
+        consumer = create_kafka_consumer('api-logs-viewer', 10000)
+        if consumer is None:
+            return []
         
         logs = []
         try:
@@ -667,18 +783,9 @@ def get_kafka_logs_with_filter(limit=100, endpoint=None, status=None, user_id=No
 def get_api_statistics():
     """API 통계 정보 조회"""
     try:
-        consumer = KafkaConsumer(
-            'api-logs',
-            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='SCRAM-SHA-256',
-            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
-            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
-            group_id='api-stats-viewer',
-            auto_offset_reset='earliest',
-            consumer_timeout_ms=5000
-        )
+        consumer = create_kafka_consumer('api-stats-viewer', 5000)
+        if consumer is None:
+            return {}
         
         stats = {
             'total_calls': 0,
@@ -723,18 +830,9 @@ def get_api_statistics():
 def search_kafka_logs(query, limit=50):
     """Kafka 로그에서 키워드 검색"""
     try:
-        consumer = KafkaConsumer(
-            'api-logs',
-            bootstrap_servers=os.getenv('KAFKA_SERVERS', 'my-kafka:9092'),
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            security_protocol='SASL_PLAINTEXT',
-            sasl_mechanism='SCRAM-SHA-256',
-            sasl_plain_username=os.getenv('KAFKA_USERNAME', 'user1'),
-            sasl_plain_password=os.getenv('KAFKA_PASSWORD', ''),
-            group_id='api-search-viewer',
-            auto_offset_reset='earliest',
-            consumer_timeout_ms=8000
-        )
+        consumer = create_kafka_consumer('api-search-viewer', 8000)
+        if consumer is None:
+            return []
         
         results = []
         try:

@@ -18,6 +18,11 @@ kubectl apply -f configmap.yaml
 echo "🔐 Deploying Secrets..."
 kubectl apply -f backend-secret.yaml
 
+# OpenTelemetry Collector 배포
+echo "📊 Deploying OpenTelemetry Collector..."
+kubectl apply -f otel-collector-config.yaml
+kubectl apply -f otel-collector-deployment.yaml
+
 # 데이터베이스 초기화
 echo "🗄️ Initializing database..."
 kubectl apply -f db-init-job.yaml
