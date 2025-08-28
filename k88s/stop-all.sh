@@ -40,13 +40,9 @@ echo "   - MariaDB: Keeping (data preservation)"
 echo "   - Kafka: Keeping (message queue preservation)"
 echo "   - Redis: Keeping (cache preservation)"
 
-# 애플리케이션 관련 리소스만 선택적으로 삭제 (인프라 Pod는 건드리지 않음)
-echo "🧹 Cleaning application resources (preserving infrastructure)..."
-kubectl delete deployment backend -n hyunjun --ignore-not-found=true
-kubectl delete deployment frontend -n hyunjun --ignore-not-found=true
-kubectl delete service backend-service -n hyunjun --ignore-not-found=true
-kubectl delete service frontend-service -n hyunjun --ignore-not-found=true
-kubectl delete job db-init-job -n hyunjun --ignore-not-found=true
+# 애플리케이션 관련 리소스만 강제 삭제
+echo "🧹 Force cleaning application resources..."
+kubectl delete all --all -n hyunjun --ignore-not-found=true
 
 # PVC는 애플리케이션 관련만 삭제 (인프라 관련은 보존)
 echo "💾 Cleaning application PVCs (preserving infrastructure PVCs)..."

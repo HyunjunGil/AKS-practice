@@ -60,28 +60,12 @@
 
         <div class="section">
           <h2>Kafka 로그 모니터링</h2>
-          <div class="kafka-controls">
-            <button @click="getKafkaLogs">기본 로그 조회</button>
-            <button @click="getKafkaStats">통계 대시보드</button>
-            <button @click="getErrorLogs">에러 로그</button>
-            <button @click="getEndpointStats">엔드포인트 통계</button>
-            <button @click="getUserStats">사용자 통계</button>
-          </div>
           
-          <!-- 로그 필터링 -->
-          <div class="log-filters">
-            <input v-model="kafkaFilters.endpoint" placeholder="엔드포인트 필터">
-            <input v-model="kafkaFilters.status" placeholder="상태 필터">
-            <input v-model="kafkaFilters.user_id" placeholder="사용자 ID 필터">
-            <input type="date" v-model="kafkaFilters.start_date">
-            <input type="date" v-model="kafkaFilters.end_date">
-            <button @click="getFilteredKafkaLogs">필터링된 로그 조회</button>
-          </div>
-
-          <!-- 로그 검색 -->
+          <!-- 간단한 로그 검색 -->
           <div class="log-search">
             <input v-model="kafkaSearchQuery" placeholder="로그 검색어 입력">
             <button @click="searchKafkaLogs">검색</button>
+            <button @click="getAllKafkaLogs" class="view-all-btn">전체 로그 보기</button>
           </div>
 
           <!-- Kafka 로그 결과 -->
@@ -109,35 +93,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-
-          <!-- 통계 대시보드 -->
-          <div v-if="kafkaStats.total_calls" class="stats-dashboard">
-            <h3>API 통계 대시보드</h3>
-            <div class="stats-grid">
-              <div class="stat-card">
-                <h4>총 API 호출</h4>
-                <p class="stat-number">{{ kafkaStats.total_calls }}</p>
-              </div>
-              <div class="stat-card">
-                <h4>엔드포인트 수</h4>
-                <p class="stat-number">{{ Object.keys(kafkaStats.endpoints || {}).length }}</p>
-              </div>
-              <div class="stat-card">
-                <h4>사용자 수</h4>
-                <p class="stat-number">{{ Object.keys(kafkaStats.users || {}).length }}</p>
-              </div>
-            </div>
-            
-            <!-- 상위 엔드포인트 -->
-            <div v-if="kafkaStats.endpoints" class="top-endpoints">
-              <h4>상위 엔드포인트</h4>
-              <ul>
-                <li v-for="(endpoint, count) in kafkaStats.endpoints" :key="endpoint">
-                  {{ endpoint }}: {{ count }}회
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
 
@@ -209,14 +164,6 @@ export default {
       currentUser: null,
       searchResults: [],
       kafkaLogs: [],
-      kafkaStats: {},
-      kafkaFilters: {
-        endpoint: '',
-        status: '',
-        user_id: '',
-        start_date: '',
-        end_date: ''
-      },
       kafkaSearchQuery: ''
     }
   },
@@ -289,63 +236,6 @@ export default {
       }
     },
 
-    // Kafka 통계 대시보드
-    async getKafkaStats() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/logs/kafka/stats`);
-        this.kafkaStats = response.data.data || response.data;
-      } catch (error) {
-        console.error('Kafka 통계 조회 실패:', error);
-      }
-    },
-
-    // Kafka 에러 로그
-    async getErrorLogs() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/logs/kafka/errors`);
-        this.kafkaLogs = response.data.data || response.data;
-      } catch (error) {
-        console.error('Kafka 에러 로그 조회 실패:', error);
-      }
-    },
-
-    // Kafka 엔드포인트 통계
-    async getEndpointStats() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/logs/kafka/endpoints`);
-        this.kafkaStats.endpoints = response.data.data.endpoints || response.data.endpoints;
-      } catch (error) {
-        console.error('Kafka 엔드포인트 통계 조회 실패:', error);
-      }
-    },
-
-    // Kafka 사용자 통계
-    async getUserStats() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/logs/kafka/users`);
-        this.kafkaStats.users = response.data.data.users || response.data.users;
-      } catch (error) {
-        console.error('Kafka 사용자 통계 조회 실패:', error);
-      }
-    },
-
-    // Kafka 필터링된 로그 조회
-    async getFilteredKafkaLogs() {
-      try {
-        const params = {};
-        if (this.kafkaFilters.endpoint) params.endpoint = this.kafkaFilters.endpoint;
-        if (this.kafkaFilters.status) params.status = this.kafkaFilters.status;
-        if (this.kafkaFilters.user_id) params.user_id = this.kafkaFilters.user_id;
-        if (this.kafkaFilters.start_date) params.start_date = this.kafkaFilters.start_date;
-        if (this.kafkaFilters.end_date) params.end_date = this.kafkaFilters.end_date;
-        
-        const response = await axios.get(`${API_BASE_URL}/logs/kafka`, { params });
-        this.kafkaLogs = response.data.data || response.data;
-      } catch (error) {
-        console.error('필터링된 Kafka 로그 조회 실패:', error);
-      }
-    },
-
     // Kafka 로그 검색
     async searchKafkaLogs() {
       try {
@@ -355,6 +245,16 @@ export default {
         this.kafkaLogs = response.data.data || response.data;
       } catch (error) {
         console.error('Kafka 로그 검색 실패:', error);
+      }
+    },
+
+    // 전체 Kafka 로그 조회
+    async getAllKafkaLogs() {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/logs/kafka`);
+        this.kafkaLogs = response.data.data || response.data;
+      } catch (error) {
+        console.error('전체 Kafka 로그 로드 실패:', error);
       }
     },
 
@@ -600,14 +500,6 @@ li {
   background-color: #5a6268;
 }
 
-.kafka-controls {
-  margin-bottom: 10px;
-}
-
-.log-filters {
-  margin-bottom: 10px;
-}
-
 .log-search {
   margin-bottom: 10px;
 }
@@ -658,56 +550,5 @@ li {
 
 .status-warning {
   color: #ffc107; /* Yellow text for warning */
-}
-
-.stats-dashboard {
-  margin-top: 20px;
-  padding: 15px;
-  border: 1px solid #eee;
-  border-radius: 5px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 15px;
-  margin-bottom: 15px;
-}
-
-.stat-card {
-  text-align: center;
-  padding: 10px;
-  border: 1px solid #eee;
-  border-radius: 5px;
-  background-color: #f9f9f9;
-}
-
-.stat-number {
-  font-size: 24px;
-  font-weight: bold;
-  color: #007bff;
-}
-
-.top-endpoints {
-  margin-top: 15px;
-}
-
-.top-endpoints h4 {
-  margin-top: 0;
-  margin-bottom: 10px;
-}
-
-.top-endpoints ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.top-endpoints li {
-  margin: 5px 0;
-  padding: 5px;
-  border: 1px solid #eee;
-  border-radius: 3px;
-  background-color: #f0f0f0;
 }
 </style> 
